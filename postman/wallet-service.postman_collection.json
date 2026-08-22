@@ -1,0 +1,740 @@
+{
+  "info": {
+    "name": "Wallet Service API",
+    "description": "End-to-end verification of the wallet service.\n\nRun the whole collection with the Collection Runner: every request either creates its own data or works off variables set at runtime, so it can be run repeatedly without resetting the database.\n\nMoney is always expressed in satang (minor units): 100 = 1.00 THB.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8080", "type": "string" },
+    { "key": "wallet_a_id", "value": "", "type": "string" },
+    { "key": "wallet_b_id", "value": "", "type": "string" },
+    { "key": "user_a_id", "value": "", "type": "string" },
+    { "key": "idem_key", "value": "", "type": "string" },
+    { "key": "first_tx_id", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "01 Health check",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('service reports ok', () => pm.expect(pm.response.json().status).to.eql('ok'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{base_url}}/health", "host": ["{{base_url}}"], "path": ["health"] }
+      }
+    },
+    {
+      "name": "02 Create wallet A",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// A random user id keeps the collection re-runnable: (user_id, currency)",
+              "// is unique, so a fixed id would fail on the second run.",
+              "pm.collectionVariables.set('user_a_id', 'user-' + pm.variables.replaceIn('{{$guid}}'));"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('201 Created', () => pm.response.to.have.status(201));",
+              "const body = pm.response.json();",
+              "pm.collectionVariables.set('wallet_a_id', body.id);",
+              "pm.test('starts empty', () => pm.expect(body.balance).to.eql(0));",
+              "pm.test('starts active', () => pm.expect(body.status).to.eql('ACTIVE'));",
+              "pm.test('currency is THB', () => pm.expect(body.currency).to.eql('THB'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"user_id\": \"{{user_a_id}}\",\n  \"currency\": \"THB\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/wallets",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "wallets"]
+        }
+      }
+    },
+    {
+      "name": "03 Create wallet B",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('201 Created', () => pm.response.to.have.status(201));",
+              "pm.collectionVariables.set('wallet_b_id', pm.response.json().id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"user_id\": \"user-{{$guid}}\",\n  \"currency\": \"THB\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/wallets",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "wallets"]
+        }
+      }
+    },
+    {
+      "name": "04 Get wallet A (balance 0.00)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const body = pm.response.json();",
+              "pm.test('balance is 0 satang', () => pm.expect(body.balance).to.eql(0));",
+              "pm.test('display string is formatted', () => pm.expect(body.balance_display).to.eql('0.00'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/v1/wallets/{{wallet_a_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "wallets", "{{wallet_a_id}}"]
+        }
+      }
+    },
+    {
+      "name": "05 Deposit 150.00 to A",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('201 Created', () => pm.response.to.have.status(201));",
+              "const body = pm.response.json();",
+              "pm.test('type is DEPOSIT', () => pm.expect(body.type).to.eql('DEPOSIT'));",
+              "pm.test('status is COMPLETED', () => pm.expect(body.status).to.eql('COMPLETED'));",
+              "pm.test('amount displays as 150.00', () => pm.expect(body.amount_display).to.eql('150.00'));",
+              "pm.test('credits wallet A', () => pm.expect(body.to_wallet_id).to.eql(pm.collectionVariables.get('wallet_a_id')));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"amount\": 15000,\n  \"reference\": \"topup-slip-001\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/wallets/{{wallet_a_id}}/deposit",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "wallets", "{{wallet_a_id}}", "deposit"]
+        }
+      }
+    },
+    {
+      "name": "06 Get wallet A (balance 150.00)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('balance is 15000 satang', () => pm.expect(pm.response.json().balance).to.eql(15000));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/v1/wallets/{{wallet_a_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "wallets", "{{wallet_a_id}}"]
+        }
+      }
+    },
+    {
+      "name": "07 Withdraw 50.00 from A",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('201 Created', () => pm.response.to.have.status(201));",
+              "const body = pm.response.json();",
+              "pm.test('type is WITHDRAW', () => pm.expect(body.type).to.eql('WITHDRAW'));",
+              "pm.test('debits wallet A', () => pm.expect(body.from_wallet_id).to.eql(pm.collectionVariables.get('wallet_a_id')));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"amount\": 5000,\n  \"reference\": \"atm-001\"\n}" },
+        "url": {
+          "raw": "{{base_url}}/api/v1/wallets/{{wallet_a_id}}/withdraw",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "wallets", "{{wallet_a_id}}", "withdraw"]
+        }
+      }
+    },
+    {
+      "name": "08 Get wallet A (balance 100.00)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('balance is 10000 satang', () => pm.expect(pm.response.json().balance).to.eql(10000));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/v1/wallets/{{wallet_a_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "wallets", "{{wallet_a_id}}"]
+        }
+      }
+    },
+    {
+      "name": "09 Transfer 25.00 from A to B",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('201 Created', () => pm.response.to.have.status(201));",
+              "const body = pm.response.json();",
+              "pm.test('type is TRANSFER', () => pm.expect(body.type).to.eql('TRANSFER'));",
+              "pm.test('both sides are recorded', () => {",
+              "  pm.expect(body.from_wallet_id).to.eql(pm.collectionVariables.get('wallet_a_id'));",
+              "  pm.expect(body.to_wallet_id).to.eql(pm.collectionVariables.get('wallet_b_id'));",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"to_wallet_id\": \"{{wallet_b_id}}\",\n  \"amount\": 2500,\n  \"reference\": \"rent\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/wallets/{{wallet_a_id}}/transfer",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "wallets", "{{wallet_a_id}}", "transfer"]
+        }
+      }
+    },
+    {
+      "name": "10 Get wallet A (balance 75.00)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('sender debited to 7500', () => pm.expect(pm.response.json().balance).to.eql(7500));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/v1/wallets/{{wallet_a_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "wallets", "{{wallet_a_id}}"]
+        }
+      }
+    },
+    {
+      "name": "11 Get wallet B (balance 25.00)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('recipient credited to 2500', () => pm.expect(pm.response.json().balance).to.eql(2500));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/v1/wallets/{{wallet_b_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "wallets", "{{wallet_b_id}}"]
+        }
+      }
+    },
+    {
+      "name": "12 Transaction history for A",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const body = pm.response.json();",
+              "pm.test('three entries so far', () => pm.expect(body.data.length).to.eql(3));",
+              "pm.test('total matches', () => pm.expect(body.pagination.total).to.eql(3));",
+              "pm.test('newest first', () => {",
+              "  const times = body.data.map(t => new Date(t.created_at).getTime());",
+              "  for (let i = 1; i < times.length; i++) {",
+              "    pm.expect(times[i - 1]).to.be.at.least(times[i]);",
+              "  }",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/v1/wallets/{{wallet_a_id}}/transactions?limit=10&offset=0",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "wallets", "{{wallet_a_id}}", "transactions"],
+          "query": [
+            { "key": "limit", "value": "10" },
+            { "key": "offset", "value": "0" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "13 [x] Withdraw more than the balance",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('422 Unprocessable Entity', () => pm.response.to.have.status(422));",
+              "pm.test('INSUFFICIENT_BALANCE', () => pm.expect(pm.response.json().error).to.eql('INSUFFICIENT_BALANCE'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"amount\": 99999999\n}" },
+        "url": {
+          "raw": "{{base_url}}/api/v1/wallets/{{wallet_a_id}}/withdraw",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "wallets", "{{wallet_a_id}}", "withdraw"]
+        }
+      }
+    },
+    {
+      "name": "14 [x] Deposit zero",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('400 Bad Request', () => pm.response.to.have.status(400));",
+              "pm.test('INVALID_AMOUNT', () => pm.expect(pm.response.json().error).to.eql('INVALID_AMOUNT'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"amount\": 0\n}" },
+        "url": {
+          "raw": "{{base_url}}/api/v1/wallets/{{wallet_a_id}}/deposit",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "wallets", "{{wallet_a_id}}", "deposit"]
+        }
+      }
+    },
+    {
+      "name": "15 [x] Transfer to self",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('400 Bad Request', () => pm.response.to.have.status(400));",
+              "pm.test('SAME_WALLET', () => pm.expect(pm.response.json().error).to.eql('SAME_WALLET'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"to_wallet_id\": \"{{wallet_a_id}}\",\n  \"amount\": 100\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/wallets/{{wallet_a_id}}/transfer",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "wallets", "{{wallet_a_id}}", "transfer"]
+        }
+      }
+    },
+    {
+      "name": "16 [x] Get an unknown wallet",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('404 Not Found', () => pm.response.to.have.status(404));",
+              "pm.test('WALLET_NOT_FOUND', () => pm.expect(pm.response.json().error).to.eql('WALLET_NOT_FOUND'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/v1/wallets/00000000-0000-0000-0000-000000000000",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "wallets", "00000000-0000-0000-0000-000000000000"]
+        }
+      }
+    },
+    {
+      "name": "17 Close wallet A",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const body = pm.response.json();",
+              "pm.test('status is CLOSED', () => pm.expect(body.status).to.eql('CLOSED'));",
+              "pm.test('the balance is preserved, not cleared', () => pm.expect(body.balance).to.eql(7500));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "PATCH",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"status\": \"CLOSED\"\n}" },
+        "url": {
+          "raw": "{{base_url}}/api/v1/wallets/{{wallet_a_id}}/status",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "wallets", "{{wallet_a_id}}", "status"]
+        }
+      }
+    },
+    {
+      "name": "18 [x] Deposit into a closed wallet",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('409 Conflict', () => pm.response.to.have.status(409));",
+              "pm.test('WALLET_INACTIVE', () => pm.expect(pm.response.json().error).to.eql('WALLET_INACTIVE'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"amount\": 100\n}" },
+        "url": {
+          "raw": "{{base_url}}/api/v1/wallets/{{wallet_a_id}}/deposit",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "wallets", "{{wallet_a_id}}", "deposit"]
+        }
+      }
+    },
+    {
+      "name": "19 Reopen wallet A",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('status is ACTIVE', () => pm.expect(pm.response.json().status).to.eql('ACTIVE'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "PATCH",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"status\": \"ACTIVE\"\n}" },
+        "url": {
+          "raw": "{{base_url}}/api/v1/wallets/{{wallet_a_id}}/status",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "wallets", "{{wallet_a_id}}", "status"]
+        }
+      }
+    },
+    {
+      "name": "20 Deposit after reopening",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('201 Created', () => pm.response.to.have.status(201));",
+              "pm.test('reopening restores full function', () => pm.expect(pm.response.json().type).to.eql('DEPOSIT'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"amount\": 100\n}" },
+        "url": {
+          "raw": "{{base_url}}/api/v1/wallets/{{wallet_a_id}}/deposit",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "wallets", "{{wallet_a_id}}", "deposit"]
+        }
+      }
+    },
+    {
+      "name": "21 Deposit 7.00 with an Idempotency-Key",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// A fresh key each run, so re-running the collection is not itself",
+              "// treated as a retry of the previous run.",
+              "pm.collectionVariables.set('idem_key', pm.variables.replaceIn('{{$guid}}'));"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('201 Created (the work happened now)', () => pm.response.to.have.status(201));",
+              "const body = pm.response.json();",
+              "pm.collectionVariables.set('first_tx_id', body.id);",
+              "pm.test('the key is echoed back', () => pm.expect(body.idempotency_key).to.eql(pm.collectionVariables.get('idem_key')));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Idempotency-Key", "value": "{{idem_key}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"amount\": 700\n}" },
+        "url": {
+          "raw": "{{base_url}}/api/v1/wallets/{{wallet_a_id}}/deposit",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "wallets", "{{wallet_a_id}}", "deposit"]
+        }
+      }
+    },
+    {
+      "name": "22 Retry the same request (same key)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK, not 201: nothing new happened', () => pm.response.to.have.status(200));",
+              "pm.test('the original transaction comes back', () => pm.expect(pm.response.json().id).to.eql(pm.collectionVariables.get('first_tx_id')));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Idempotency-Key", "value": "{{idem_key}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"amount\": 700\n}" },
+        "url": {
+          "raw": "{{base_url}}/api/v1/wallets/{{wallet_a_id}}/deposit",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "wallets", "{{wallet_a_id}}", "deposit"]
+        }
+      }
+    },
+    {
+      "name": "23 Get wallet A (the retry did not double-credit)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "// 7500 after the transfer, +100 in step 20, +700 once in steps 21-22.",
+              "pm.test('the 7.00 deposit was applied exactly once', () => pm.expect(pm.response.json().balance).to.eql(8300));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/v1/wallets/{{wallet_a_id}}",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "wallets", "{{wallet_a_id}}"]
+        }
+      }
+    },
+    {
+      "name": "24 [x] Reuse the key for a different amount",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('422 Unprocessable Entity', () => pm.response.to.have.status(422));",
+              "pm.test('IDEMPOTENCY_KEY_REUSE', () => pm.expect(pm.response.json().error).to.eql('IDEMPOTENCY_KEY_REUSE'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Idempotency-Key", "value": "{{idem_key}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"amount\": 999\n}" },
+        "url": {
+          "raw": "{{base_url}}/api/v1/wallets/{{wallet_a_id}}/deposit",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "wallets", "{{wallet_a_id}}", "deposit"]
+        }
+      }
+    },
+    {
+      "name": "25 [x] Duplicate wallet for the same user and currency",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('409 Conflict', () => pm.response.to.have.status(409));",
+              "pm.test('WALLET_ALREADY_EXISTS', () => pm.expect(pm.response.json().error).to.eql('WALLET_ALREADY_EXISTS'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"user_id\": \"{{user_a_id}}\",\n  \"currency\": \"THB\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/wallets",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "wallets"]
+        }
+      }
+    },
+    {
+      "name": "26 [x] Unsupported currency",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('400 Bad Request', () => pm.response.to.have.status(400));",
+              "pm.test('UNSUPPORTED_CURRENCY', () => pm.expect(pm.response.json().error).to.eql('UNSUPPORTED_CURRENCY'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"user_id\": \"user-{{$guid}}\",\n  \"currency\": \"XYZ\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/wallets",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "wallets"]
+        }
+      }
+    }
+  ]
+}

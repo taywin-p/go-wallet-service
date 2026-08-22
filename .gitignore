@@ -1,0 +1,18 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+wallet-api
+
+# Test & coverage output
+coverage.out
+coverage.html
+
+# Environment / secrets
+.env
+
+# Editors
+.idea/
+.vscode/

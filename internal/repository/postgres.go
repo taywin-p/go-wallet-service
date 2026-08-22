@@ -4,6 +4,7 @@ import (
 	"log"
 	"time"
 
+	"wallet-service/internal/config"
 	"wallet-service/internal/domain"
 
 	"gorm.io/driver/postgres"
@@ -15,16 +16,18 @@ type Database struct {
 	DB *gorm.DB
 }
 
-func NewDatabase() *Database {
-	dsn := "host=localhost user=user password=password dbname=wallet_db port=5432 sslmode=disable TimeZone=Asia/Bangkok"
-	
-	// Retry connection loop
+func NewDatabase(cfg config.Config) *Database {
+	dsn := cfg.DSN()
+
+	// Retry loop. Compose already gates startup on the db healthcheck, but this
+	// also covers `go run` against a container that is still booting, and a
+	// Postgres restart under an orchestrator.
 	var db *gorm.DB
 	var err error
-	
+
 	for i := 0; i < 5; i++ {
 		db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{
-			Logger: logger.Default.LogMode(logger.Info),
+			Logger: logger.Default.LogMode(logLevel(cfg.DBLogLevel)),
 		})
 		if err == nil {
 			break
@@ -37,9 +40,16 @@ func NewDatabase() *Database {
 		log.Fatal("Failed to connect to database after retries: ", err)
 	}
 
+	sqlDB, err := db.DB()
+	if err != nil {
+		log.Fatal("Failed to access underlying sql.DB: ", err)
+	}
+	sqlDB.SetMaxOpenConns(cfg.DBMaxOpenConns)
+	sqlDB.SetMaxIdleConns(cfg.DBMaxIdleConns)
+	sqlDB.SetConnMaxLifetime(cfg.DBConnMaxLifetime)
+
 	log.Println("Connected to PostgreSQL database successfully")
 
-	// Auto Migrate
 	err = db.AutoMigrate(
 		&domain.Wallet{},
 		&domain.Transaction{},
@@ -50,4 +60,17 @@ func NewDatabase() *Database {
 	log.Println("Database migration completed")
 
 	return &Database{DB: db}
+}
+
+func logLevel(name string) logger.LogLevel {
+	switch name {
+	case "silent":
+		return logger.Silent
+	case "error":
+		return logger.Error
+	case "info":
+		return logger.Info
+	default:
+		return logger.Warn
+	}
 }

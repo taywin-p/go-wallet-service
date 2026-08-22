@@ -1,0 +1,14 @@
+.git
+.gitignore
+.claude
+README.md
+PROJECT_BACKUP.md
+postman/
+coverage.out
+coverage.html
+*.exe
+.env
+.idea/
+.vscode/
+Dockerfile
+docker-compose.yml
