@@ -37,6 +37,14 @@ services:
       # Set to "info" to watch every SQL statement scroll by during a demo.
       DB_LOG_LEVEL: warn
       APP_PORT: "8080"
+    # Readiness, not liveness: healthy only once the API can reach the database.
+    # 127.0.0.1, not localhost: busybox wget resolves localhost to ::1 first,
+    # and Fiber listens on IPv4 only.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health/ready || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     restart: unless-stopped
 
 volumes:

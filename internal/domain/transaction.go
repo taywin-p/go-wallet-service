@@ -14,15 +14,13 @@ const (
 	TransactionTypeWithdraw TransactionType = "WITHDRAW"
 	TransactionTypeTransfer TransactionType = "TRANSFER"
 
-	// Every transaction here is written as COMPLETED. Inside a single database
-	// transaction, writing PENDING first and updating it afterwards adds no
-	// information -- both rows commit together. PENDING starts to mean
-	// something only when money moves through a system that cannot commit
-	// atomically with our database (an external payment gateway), which also
-	// requires an outbox and a reconciliation job.
-	TransactionStatusPending   TransactionStatus = "PENDING"
+	// Every transaction here is written as COMPLETED, and there is deliberately
+	// no PENDING state. Inside a single database transaction, writing PENDING
+	// first and updating it afterwards adds no information -- both rows commit
+	// together. PENDING starts to mean something only when money moves through
+	// a system that cannot commit atomically with our database (an external
+	// payment gateway), which also requires an outbox and a reconciliation job.
 	TransactionStatusCompleted TransactionStatus = "COMPLETED"
-	TransactionStatusFailed    TransactionStatus = "FAILED"
 )
 
 // Transaction is an append-only ledger entry: rows are never updated or
@@ -37,7 +35,7 @@ type Transaction struct {
 	Amount int64 `gorm:"type:bigint;not null" json:"amount"`
 
 	Type      TransactionType   `gorm:"type:varchar(20);not null" json:"type"`
-	Status    TransactionStatus `gorm:"type:varchar(20);not null;default:'PENDING'" json:"status"`
+	Status    TransactionStatus `gorm:"type:varchar(20);not null;default:'COMPLETED'" json:"status"`
 	Reference string            `gorm:"type:varchar(255)" json:"reference,omitempty"`
 
 	// IdempotencyKey makes a retried request safe. It is a pointer because

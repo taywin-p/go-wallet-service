@@ -267,7 +267,7 @@ balance == SUM(ฝากเข้า) − SUM(ถอนออก) + SUM(โอ�
 
 ### 5. ทำไมไม่ใช้ PENDING → COMPLETED
 
-`TransactionStatusPending` / `Failed` ประกาศไว้ในโค้ดแต่ไม่ได้ใช้ — **ตั้งใจ**
+ทุกรายการเขียนเป็น `COMPLETED` ตรงๆ และไม่มี state `PENDING` / `FAILED` ในโค้ด — **ตั้งใจ**
 
 ใน database เดียว การเขียน `PENDING` ก่อนแล้ว update เป็น `COMPLETED` ใน transaction เดียวกัน
 **ไม่ให้ข้อมูลเพิ่มเลย** เพราะทั้งสองอย่าง commit พร้อมกันอยู่ดี ไม่มีใครเห็นสถานะ PENDING ได้เลยสักวินาที
@@ -409,9 +409,10 @@ curl -s localhost:8080/api/v1/wallets/$B | jq .balance
 
 import `postman/wallet-service.postman_collection.json` แล้วกด **Run collection**
 
-26 requests เรียงเป็น flow เดียวจบ: สร้างกระเป๋า 2 ใบ → ฝาก → ถอน → โอน → ดูประวัติ →
-เทส error 4 แบบ → ปิด/เปิดบัญชี → เทส idempotency (201 แล้ว 200 ด้วย transaction id เดียวกัน) →
-เทสกระเป๋าซ้ำและสกุลเงินไม่รองรับ
+35 requests เรียงเป็น flow เดียวจบ: สร้างกระเป๋า 2 ใบ → ฝาก → ถอน → โอน → ดูประวัติ →
+เทส error 4 แบบ → ปิด/เปิดบัญชี → เทส idempotency ของ deposit (201 แล้ว 200 ด้วย transaction id เดียวกัน) →
+เทสกระเป๋าซ้ำและสกุลเงินไม่รองรับ → โอนเกินยอด → เทส idempotency ของ transfer
+(เช็คว่าทั้งฝั่งผู้โอนและผู้รับขยับแค่ครั้งเดียว) → โอนเข้ากระเป๋าที่ปิด → wallet id ผิดรูปแบบ → status ไม่รู้จัก
 
 ทุก request สร้างข้อมูลของตัวเองหรือทำงานบนตัวแปร runtime — **กด Run ซ้ำได้เรื่อยๆ ไม่ต้องล้าง DB**
 (`user_id` และ `Idempotency-Key` สุ่มใหม่ทุกรอบด้วย `{{$guid}}`)
